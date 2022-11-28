@@ -4,9 +4,13 @@
 #include <stdlib.h>
 #include <vector>
 #include <time.h>
+#include <chrono>
+#include <thread>
+#include <windows.h>
 
 #define NUM_VERTICES 100
 
+using namespace std;
 
 struct Point2
 {
@@ -30,8 +34,9 @@ struct Point2
 // Basic vector arithmetic operations
 
 Point2 subtract (Point2 a, Point2 b) { a.x -= b.x; a.y -= b.y; return a; }
-Point2 negate (Point2 v) { v.x = -v.x; v.y = -v.y; return v; }
+Point2 negatePoint (Point2 v) { v.x = -v.x; v.y = -v.y; return v; }
 Point2 perpendicular (Point2 v) { Point2 p = { v.y, -v.x }; return p; }
+Point2 shiftXY (Point2 v, float x, float y) {v.x += x; v.y += y; return v;}
 float dotProduct (Point2 a, Point2 b) { return a.x * b.x + a.y * b.y; }
 float lengthSquared (Point2 v) { return v.x * v.x + v.y * v.y; }
 
@@ -57,7 +62,7 @@ Point2 tripleProduct (Point2 a, Point2 b, Point2 c) {
 // Center of Gravity, especially for bodies with nonuniform density,
 // but this is ok as initial direction of simplex search in GJK.
 
-Point2 averagePoint (const Point2 * vertices, size_t count) {
+Point2 averagePoint (const vector<Point2> vertices, size_t count) {
     Point2 avg = { 0.f, 0.f };
     for (size_t i = 0; i < count; i++) {
         avg.x += vertices[i].x;
@@ -71,7 +76,7 @@ Point2 averagePoint (const Point2 * vertices, size_t count) {
 //-----------------------------------------------------------------------------
 // Get furthest vertex along a certain direction
 
-size_t indexOfFurthestPoint (const Point2 * vertices, size_t count, Point2 d) {
+size_t indexOfFurthestPoint (const vector<Point2> vertices, size_t count, Point2 d) {
     
     float maxProduct = dotProduct (d, vertices[0]);
     size_t index = 0;
@@ -88,14 +93,14 @@ size_t indexOfFurthestPoint (const Point2 * vertices, size_t count, Point2 d) {
 //-----------------------------------------------------------------------------
 // Minkowski sum support function for GJK
 
-Point2 support (const Point2 * vertices1, size_t count1,
-              const Point2 * vertices2, size_t count2, Point2 d) {
+Point2 support (const vector<Point2> vertices1, size_t count1,
+            const vector<Point2> vertices2, size_t count2, Point2 d) {
 
     // get furthest point of first body along an arbitrary direction
     size_t i = indexOfFurthestPoint (vertices1, count1, d);
     
     // get furthest point of second body along the opposite direction
-    size_t j = indexOfFurthestPoint (vertices2, count2, negate (d));
+    size_t j = indexOfFurthestPoint (vertices2, count2, negatePoint (d));
 
     // subtract (Minkowski sum) the two points to see if bodies 'overlap'
     return subtract (vertices1[i], vertices2[j]);
@@ -106,8 +111,8 @@ Point2 support (const Point2 * vertices1, size_t count1,
 
 
 
-int gjk (const Point2 * vertices1, size_t count1,
-         const Point2 * vertices2, size_t count2) {
+int gjk (const vector<Point2> vertices1, size_t count1,
+         const vector<Point2> vertices2, size_t count2) {
     
     int iter_count = 0;
 
@@ -130,7 +135,7 @@ int gjk (const Point2 * vertices1, size_t count1,
     if (dotProduct (a, d) <= 0)
         return 0; // no collision
     
-    d = negate (a); // The next search direction is always towards the origin, so the next search direction is negate(a)
+    d = negatePoint (a); // The next search direction is always towards the origin, so the next search direction is negatePoint(a)
     
     while (iter_count < 100) {
         iter_count++;
@@ -140,7 +145,7 @@ int gjk (const Point2 * vertices1, size_t count1,
         if (dotProduct (a, d) <= 0)
             return 0; // no collision
         
-        ao = negate (a); // from point A to Origin is just negative A
+        ao = negatePoint (a); // from point A to Origin is just negative A
         
         // simplex has 2 points (a line segment, not a triangle yet)
         if (index < 2) {
@@ -200,7 +205,6 @@ Point2 Jostle(Point2 a)
 	return b;
 }
 
-using namespace std;
 
 // A global Point2 needed for sorting points with reference
 // to the first Point2 Used in compare function of qsort()
@@ -262,9 +266,11 @@ int compare(const void *vp1, const void *vp2)
 }
 
 // Prints convex hull of a set of n points.
-void convexHull(Point2 *points)
+vector<Point2> convexHull(vector<Point2> points, int n)
 {
-    int n = NUM_VERTICES;
+    // returned polygon (empty initialization)
+    vector<Point2> polygon;
+
 	// Find the bottommost Point2
 	int ymin = points[0].y, min = 0;
 	for (int i = 1; i < n; i++)
@@ -309,7 +315,7 @@ void convexHull(Point2 *points)
 
 	// If modified array of points has less than 3 points,
 	// convex hull is not possible
-	if (m < 3) return;
+	if (m < 3) return polygon;
 
 	// Create an empty stack and push first three points
 	// to it.
@@ -329,69 +335,63 @@ void convexHull(Point2 *points)
 		S.push(points[i]);
 	}
 	
-	vector<Point2> pointVector;
-
+	
+    cout << "Generated polygon:" << endl;
 	// Now stack has the output points, print contents of stack
 	while (!S.empty())
 	{
 		Point2 p = S.top();
 		cout << "(" << p.x << ", " << p.y <<")" << endl;
 		S.pop();
-		pointVector.push_back(p);
+		polygon.push_back(p);
 	}
-
-	Point2 out[NUM_VERTICES];
-	copy(pointVector.begin(), pointVector.end(), out);
-
-	points = out;
+    cout << "End of generated polygon...." << endl;
+    return polygon;
 }
 
-void randomPoints(Point2 *randomPoints, const int n) {
+void randomPoints(vector<Point2> &randomPoints, const int n, int sizeX, int sizeY, float shiftX = 0, float shiftY = 0) {
     int x, y;
     srand (time(NULL));
-
-    vector<Point2> points;
     
     for (int i = 0; i < n; i++) {
         x = rand() % 15;
         y = rand() % 15;
 
         Point2 element;
-        element.x = x;
-        element.y = y;
+        element.x = x + shiftX;
+        element.y = y + shiftY;
 
-        points.push_back(element);
+        randomPoints.push_back(element);
     }
-    const int length = sizeof (points) / sizeof (Point2);
-    Point2 out[length];
-    for(int i = 0; i < points.size(); i++)
-    {
-        out[i] = points[i];
-    }
-
-    randomPoints = out;
 }
 
-void generateRandomPolygon(Point2 *polygon, int n) {
-    Point2 randPoints[1];
+/**
+ * @brief Generates random polygon.
+ *          First generates point cloud of size n
+ *          Then creates convex polygon from convex hull of the cloud
+ *  
+ * @param n number of points in random point cloud
+ * @return vector of points representing polygon
+ */
+vector<Point2> generateRandomPolygon(int n, int sizeX, int sizeY, float shiftX = 0, float shiftY = 0) {
+    printf("Generating polygon with max bounded size (%d, %d) shifted by (%f, %f)...\n", sizeX, sizeY, shiftX, shiftY);
+
+    vector<Point2> randPoints;
     
-    randomPoints(randPoints, n);
+    randomPoints(randPoints, n, sizeX, sizeY, shiftX, shiftY);
  
-    convexHull(randPoints, n);
+    vector<Point2> polygon = convexHull(randPoints, n);
 
-    polygon = randPoints;
-
-    return;
+    return polygon;
 }
 
 
 int main(int argc, const char * argv[]) {
-       
-    Point2 vertices1[1];
-    Point2 vertices2[1];
+    vector<Point2> vertices1 = generateRandomPolygon(100000, 15, 15);
+    Sleep(1500);
+    vector<Point2> vertices2 = generateRandomPolygon(10000, 15, 15, 10, 10);
 
-    generateRandomPolygon(vertices1, 100);
-    generateRandomPolygon(vertices2, 100);
+    
 
     // Point2 vertices1[] = {
     //     { 4.0f, 11.0f },
@@ -405,24 +405,30 @@ int main(int argc, const char * argv[]) {
     //     { 9.0f, 9.0f },
     // };
 
-    size_t count1 = sizeof (vertices1) / sizeof (Point2); // == 3
-    size_t count2 = sizeof (vertices2) / sizeof (Point2); // == 4
+    size_t count1 = vertices1.size(); // == 3
+    size_t count2 = vertices2.size(); // == 4
 
 	for(int runs = 0; runs < 4; runs++)
 	{
-		Point2 a[sizeof (vertices1) / sizeof (Point2)];
-		Point2 b[sizeof (vertices2) / sizeof (Point2)];
+        vector<Point2> a;
+        vector<Point2> b;
+		
+		for (size_t i = 0; i < count1; ++i) {
+            a.push_back(Jostle(vertices1[i]));
+        }            
 
-		for (size_t i = 0; i < count1; ++i) a[i] = Jostle(vertices1[i]);
-		for (size_t i = 0; i < count2; ++i) b[i] = Jostle(vertices2[i]);
+		for (size_t i = 0; i < count2; ++i) {
+            b.push_back(Jostle(vertices2[i]));
+        } 
 
 		int collisionDetected = gjk (a, count1, b, count2);
 		if (!collisionDetected)
 		{
-			printf("Found failing case:\n\t{%f, %f}, {%f, %f}, {%f, %f}\n\t{%f, %f}, {%f, %f}, {%f, %f}\n\n",
-				a[0].x, a[0].y, a[1].x, a[1].y, a[2].x, a[2].y,
-				b[0].x, b[0].y, b[1].x, b[1].y, b[2].x, b[2].y
-			);
+            printf("No collision detected\n");
+			// printf("Found failing case:\n\t{%f, %f}, {%f, %f}, {%f, %f}\n\t{%f, %f}, {%f, %f}, {%f, %f}\n\n",
+			// 	a[0].x, a[0].y, a[1].x, a[1].y, a[2].x, a[2].y,
+			// 	b[0].x, b[0].y, b[1].x, b[1].y, b[2].x, b[2].y
+			// );
 		}
 		else
 		{

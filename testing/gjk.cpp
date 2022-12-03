@@ -377,13 +377,32 @@ void generateRandomPolygon(Point2 *polygon, int n) {
     
     randomPoints(randPoints, n);
  
-    convexHull(randPoints, n);
+    convexHull(randPoints);
 
     polygon = randPoints;
 
     return;
 }
 
+void printToFile(Point2 *polygon1, int length1)
+{
+    std::fstream object1;
+    int num_obj = 0;
+    std::string fileName = "../Point_Clouds/object_";
+
+    //creates a unique identifier for each object
+    struct std::stat buffer;
+    while(stat ((fileName + std::to_string(num_obj)).c_str(), &buffer) == 0)
+    {
+        num_obj ++;
+    }
+    object1.open(fileName + std::to_string(num_obj));
+    for(int x = 0; x < length1; x++)
+    {
+        object1 << polygon1[x].x << " " << polygon1[x].y << std::endl;
+    }
+
+}
 
 int main(int argc, const char * argv[]) {
        
@@ -392,6 +411,8 @@ int main(int argc, const char * argv[]) {
 
     generateRandomPolygon(vertices1, 100);
     generateRandomPolygon(vertices2, 100);
+    
+
 
     // Point2 vertices1[] = {
     //     { 4.0f, 11.0f },

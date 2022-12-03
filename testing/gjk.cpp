@@ -10,6 +10,9 @@
 
 #define NUM_VERTICES 100
 
+// #define DEBUG_POLY_GENERATION
+// #define DEBUG
+
 using namespace std;
 
 struct Point2
@@ -22,6 +25,24 @@ struct Point2
     Point2(float x, float y) {
         
     }
+};
+
+struct Poly
+{
+    float centerX, centerY;
+    vector<Point2> vertices;
+
+    Poly() {
+        centerX = 0.0f;
+        centerY = 0.0f;
+    }
+
+    Poly(vector<Point2> vertices_) {
+        centerX = 0;
+        centerY = 0;
+        vertices = vertices_;
+    }
+
 };
 
 //-----------------------------------------------------------------------------
@@ -114,7 +135,13 @@ Point2 support (const vector<Point2> vertices1, size_t count1,
 int gjk (const vector<Point2> vertices1, size_t count1,
          const vector<Point2> vertices2, size_t count2) {
     
+    // ! Start clock timer
+    auto end = std::chrono::high_resolution_clock::now();
+    auto start = std::chrono::high_resolution_clock::now();
+
+
     int iter_count = 0;
+    int result = 0;
 
     size_t index = 0; // index of current vertex of simplex
     Point2 a, b, c, d, ao, ab, ac, abperp, acperp, simplex[3];
@@ -132,9 +159,12 @@ int gjk (const vector<Point2> vertices1, size_t count1,
     // set the first support as initial point of the new simplex
     a = simplex[0] = support (vertices1, count1, vertices2, count2, d);
     
-    if (dotProduct (a, d) <= 0)
+    if (dotProduct (a, d) <= 0) {
+        // ! END CLOCK TIMER & Print time
+        // time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end - start).count();
+        // cout << "GJK Elapsed time: " << time_span << " seconds." << endl;        
         return 0; // no collision
-    
+    }
     d = negatePoint (a); // The next search direction is always towards the origin, so the next search direction is negatePoint(a)
     
     while (iter_count < 100) {
@@ -142,9 +172,9 @@ int gjk (const vector<Point2> vertices1, size_t count1,
         
         a = simplex[++index] = support (vertices1, count1, vertices2, count2, d);
         
-        if (dotProduct (a, d) <= 0)
+        if (dotProduct (a, d) <= 0) {
             return 0; // no collision
-        
+        }
         ao = negatePoint (a); // from point A to Origin is just negative A
         
         // simplex has 2 points (a line segment, not a triangle yet)
@@ -172,9 +202,16 @@ int gjk (const vector<Point2> vertices1, size_t count1,
             
             abperp = tripleProduct (ac, ab, ab);
             
-            if (dotProduct (abperp, ao) < 0)
-                return 1; // collision
-            
+            if (dotProduct (abperp, ao) < 0) {
+                
+                // ! END CLOCK TIMER & Print time
+                // end = std::chrono::steady_clock::now();
+                // time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end - start).count();
+                // cout << "GJK Elapsed time: " << time_span << " seconds." << endl;
+                result = 1; // collision
+                break;
+                
+            }
             simplex[0] = simplex[1]; // swap first element (point C)
 
             d = abperp; // new direction is normal to AB towards Origin
@@ -183,8 +220,18 @@ int gjk (const vector<Point2> vertices1, size_t count1,
         simplex[1] = simplex[2]; // swap element in the middle (point B)
         --index;
     }
+
+    #ifdef DEBUG
+    if (result == 1) {
+        end = std::chrono::high_resolution_clock::now();
+        auto duration = (end - start);
+        auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(duration); // Microsecond (as int)
+        cout << "Duration = " << ns.count() << "ns" << endl;
+    }
+    #endif
     
-    return 0;
+
+    return result;
 }
 
 //-----------------------------------------------------------------------------
@@ -335,27 +382,35 @@ vector<Point2> convexHull(vector<Point2> points, int n)
 		S.push(points[i]);
 	}
 	
-	
-    cout << "Generated polygon:" << endl;
+	#ifdef DEBUG_POLY_GENERATION
+        cout << "Generated polygon:" << endl;
+    #endif
+    
 	// Now stack has the output points, print contents of stack
 	while (!S.empty())
 	{
 		Point2 p = S.top();
-		cout << "(" << p.x << ", " << p.y <<")" << endl;
 		S.pop();
 		polygon.push_back(p);
+
+        #ifdef DEBUG_POLY_GENERATION
+            cout << "(" << p.x << ", " << p.y <<")" << endl;
+        #endif
 	}
-    cout << "End of generated polygon...." << endl;
+    #ifdef DEBUG_POLY_GENERATION
+        cout << "End of generated polygon...." << endl;
+    #endif
+    
     return polygon;
 }
 
-void randomPoints(vector<Point2> &randomPoints, const int n, int sizeX, int sizeY, float shiftX = 0, float shiftY = 0) {
+vector<Point2> randomPoints(const int n, int sizeX, int sizeY, float shiftX = 0, float shiftY = 0) {
     int x, y;
-    srand (time(NULL));
-    
+    // srand (time(NULL));
+    vector<Point2> randomPoints;
     for (int i = 0; i < n; i++) {
-        x = rand() % 15;
-        y = rand() % 15;
+        x = rand() % sizeX;
+        y = rand() % sizeY;
 
         Point2 element;
         element.x = x + shiftX;
@@ -363,6 +418,8 @@ void randomPoints(vector<Point2> &randomPoints, const int n, int sizeX, int size
 
         randomPoints.push_back(element);
     }
+
+    return randomPoints;
 }
 
 /**
@@ -374,11 +431,11 @@ void randomPoints(vector<Point2> &randomPoints, const int n, int sizeX, int size
  * @return vector of points representing polygon
  */
 vector<Point2> generateRandomPolygon(int n, int sizeX, int sizeY, float shiftX = 0, float shiftY = 0) {
-    printf("Generating polygon with max bounded size (%d, %d) shifted by (%f, %f)...\n", sizeX, sizeY, shiftX, shiftY);
+    #ifdef DEBUG_POLY_GENERATION
+        printf("Generating polygon with max bounded size (%d, %d) shifted by (%f, %f)...\n", sizeX, sizeY, shiftX, shiftY);
+    #endif
 
-    vector<Point2> randPoints;
-    
-    randomPoints(randPoints, n, sizeX, sizeY, shiftX, shiftY);
+    vector<Point2> randPoints = randomPoints(n, sizeX, sizeY, shiftX, shiftY);
  
     vector<Point2> polygon = convexHull(randPoints, n);
 
@@ -387,54 +444,116 @@ vector<Point2> generateRandomPolygon(int n, int sizeX, int sizeY, float shiftX =
 
 
 int main(int argc, const char * argv[]) {
-    vector<Point2> vertices1 = generateRandomPolygon(100000, 15, 15);
-    Sleep(1500);
-    vector<Point2> vertices2 = generateRandomPolygon(10000, 15, 15, 10, 10);
 
-    
+    /**
+     * @brief: main method for GJK serial testing
+     * 
+     * @run: terminal commands:
+     *      compile: g++ -o gjk gjk.cpp -pg -g
+     *      run: gjk
+     *      profile: gprof -a gjk.exe > [output file name]
+     * 
+     * @structure: organized as a 2 phase execution:
+     * 
+     * Phase 1: generate random polygons in a loop
+     *      - Store polygons in a vector
+     * 
+     * Phase 2: find collisions between the polygons:
+     *      - check for collisions between each unique pair of polygons 
+     */
 
-    // Point2 vertices1[] = {
-    //     { 4.0f, 11.0f },
-    //     { 5.0f, 5.0f },
-    //     { 9.0f, 9.0f },
-    // };
-    
-    // Point2 vertices2[] = {
-    //     { 4.0f, 11.0f },
-    //     { 5.0f, 5.0f },
-    //     { 9.0f, 9.0f },
-    // };
+    // Polygon Parameters
+    const int sqrt_num_polygons = 32; // sqrt(number of polygons generated)
+    const int num_polygons = sqrt_num_polygons * sqrt_num_polygons;
+    const int dimX = 50; // max x dimension of polygon
+    const int dimY = 50; // max y dimension of polygon
+    const int num_rand_points = 200; // number of random points to generate each poly
+    const float space_factor = 0.4; // fraction of dim that polygons are displaced by
 
-    size_t count1 = vertices1.size(); // == 3
-    size_t count2 = vertices2.size(); // == 4
+    int total_num_points = 0; // stats variable
+    int locX, locY;
+    srand (time(NULL));
 
-	for(int runs = 0; runs < 4; runs++)
+    // polygon vector
+    vector<Poly> polygons;
+    /**
+     * @brief Generate polygons in a loop
+     * 
+     * @param total_num_points calculates total number of points for averaging later
+     * 
+     */
+    for (int x = 0; x < sqrt_num_polygons; x++) {
+        for (int y = 0; y < sqrt_num_polygons; y++) {
+            locX = x * (dimX * space_factor);
+            locY = y * (dimY * space_factor);
+            vector<Point2> vertices = generateRandomPolygon(num_rand_points, dimX, dimY, locX, locY);
+            Poly curr_poly = Poly(vertices);
+            polygons.push_back(curr_poly);
+
+            total_num_points += vertices.size();
+        }
+    }
+
+    float average_num_points = total_num_points/(1.0f * num_polygons);
+
+    // Stats variables
+    int num_gjk = 0, num_collisions = 0;
+    auto start = std::chrono::high_resolution_clock::now();
+
+    /**
+     * @brief GJK Call Loop
+     * 
+     * Iterates over all unique polygon pairs and calls GJK on them.
+     * 
+     */
+	for(int runs = 0; runs < (num_polygons - 1); runs++)
 	{
-        vector<Point2> a;
-        vector<Point2> b;
-		
-		for (size_t i = 0; i < count1; ++i) {
-            a.push_back(Jostle(vertices1[i]));
-        }            
+        for (int comp = runs + 1; comp < num_polygons; comp++) {
+            vector<Point2> a = polygons[runs].vertices;
+            vector<Point2> b = polygons[comp].vertices;
 
-		for (size_t i = 0; i < count2; ++i) {
-            b.push_back(Jostle(vertices2[i]));
-        } 
+            size_t count1 = a.size();
+            size_t count2 = b.size(); 
 
-		int collisionDetected = gjk (a, count1, b, count2);
-		if (!collisionDetected)
-		{
-            printf("No collision detected\n");
-			// printf("Found failing case:\n\t{%f, %f}, {%f, %f}, {%f, %f}\n\t{%f, %f}, {%f, %f}, {%f, %f}\n\n",
-			// 	a[0].x, a[0].y, a[1].x, a[1].y, a[2].x, a[2].y,
-			// 	b[0].x, b[0].y, b[1].x, b[1].y, b[2].x, b[2].y
-			// );
-		}
-		else
-		{
-			printf("Collision correctly detected\n");
-		}
+            num_gjk++;
+            int collisionDetected = gjk (a, count1, b, count2);
+
+            if (!collisionDetected)
+            {
+                // printf("No collision detected\n");
+            }
+            else
+            {   
+                num_collisions++;
+                #ifdef DEBUG
+                    printf("Collision correctly detected between Polygon %d and Polygon %d\n", runs, comp);
+                #endif
+            }
+        }
 	}
+
+
+    // Timing
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = (end - start);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration); // Microsecond (as int)
+    float total_time_ms = 1.0f * ms.count();
+    float avg_time_ms = total_time_ms/num_gjk;
+
+    // Summary
+    printf("\n\n");
+    printf("=====================================================\n");
+    printf("=================  Main completed  ==================\n");
+    printf("=====================================================\n");
+    printf("======   Num Polygons = %d\n", num_polygons); 
+    printf("======   Avg num points = %f\n", average_num_points);
+    printf("======   GJK run on %d pairs of polygons\n", num_gjk);
+    printf("======   Total Num collisions: %d\n", num_collisions);
+    printf("======   Total time for GJK = %f seconds\n", (total_time_ms/1000));
+    printf("======   Average time per GJK call = %f ms\n", avg_time_ms);
+    printf("=====================================================\n");
+    printf("=================  End of Summary  ==================\n");
+    printf("=====================================================\n");
     
     exit(0);
 }

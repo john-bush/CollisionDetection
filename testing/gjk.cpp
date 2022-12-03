@@ -29,17 +29,17 @@ struct Point2
 
 struct Poly
 {
-    float centerX, centerY;
+    float avgX, avgY;
     vector<Point2> vertices;
 
     Poly() {
-        centerX = 0.0f;
-        centerY = 0.0f;
+        avgX = 0.0f;
+        avgY = 0.0f;
     }
 
     Poly(vector<Point2> vertices_) {
-        centerX = 0;
-        centerY = 0;
+        avgX = 0;
+        avgY = 0;
         vertices = vertices_;
     }
 
@@ -463,7 +463,7 @@ int main(int argc, const char * argv[]) {
      */
 
     // Polygon Parameters
-    const int sqrt_num_polygons = 32; // sqrt(number of polygons generated)
+    const int sqrt_num_polygons = 64; // sqrt(number of polygons generated)
     const int num_polygons = sqrt_num_polygons * sqrt_num_polygons;
     const int dimX = 50; // max x dimension of polygon
     const int dimY = 50; // max y dimension of polygon

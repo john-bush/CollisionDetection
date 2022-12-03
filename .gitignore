@@ -1,0 +1,6 @@
+*.o
+*.out
+*.exe
+*.stats
+.vscode/
+Makefile_mess

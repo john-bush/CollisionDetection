@@ -4,9 +4,16 @@
 #include <stdlib.h>
 #include <vector>
 #include <time.h>
+#include <chrono>
+#include <thread>
+#include <windows.h>
 
 #define NUM_VERTICES 100
 
+// #define DEBUG_POLY_GENERATION
+// #define DEBUG
+
+using namespace std;
 
 struct Point2
 {
@@ -20,6 +27,24 @@ struct Point2
     }
 };
 
+struct Poly
+{
+    float avgX, avgY;
+    vector<Point2> vertices;
+
+    Poly() {
+        avgX = 0.0f;
+        avgY = 0.0f;
+    }
+
+    Poly(vector<Point2> vertices_) {
+        avgX = 0;
+        avgY = 0;
+        vertices = vertices_;
+    }
+
+};
+
 //-----------------------------------------------------------------------------
 // Gilbert-Johnson-Keerthi (GJK) collision detection algorithm in 2D
 // http://www.dyn4j.org/2010/04/gjk-gilbert-johnson-keerthi/
@@ -30,8 +55,9 @@ struct Point2
 // Basic vector arithmetic operations
 
 Point2 subtract (Point2 a, Point2 b) { a.x -= b.x; a.y -= b.y; return a; }
-Point2 negate (Point2 v) { v.x = -v.x; v.y = -v.y; return v; }
+Point2 negatePoint (Point2 v) { v.x = -v.x; v.y = -v.y; return v; }
 Point2 perpendicular (Point2 v) { Point2 p = { v.y, -v.x }; return p; }
+Point2 shiftXY (Point2 v, float x, float y) {v.x += x; v.y += y; return v;}
 float dotProduct (Point2 a, Point2 b) { return a.x * b.x + a.y * b.y; }
 float lengthSquared (Point2 v) { return v.x * v.x + v.y * v.y; }
 
@@ -57,7 +83,7 @@ Point2 tripleProduct (Point2 a, Point2 b, Point2 c) {
 // Center of Gravity, especially for bodies with nonuniform density,
 // but this is ok as initial direction of simplex search in GJK.
 
-Point2 averagePoint (const Point2 * vertices, size_t count) {
+Point2 averagePoint (const vector<Point2> vertices, size_t count) {
     Point2 avg = { 0.f, 0.f };
     for (size_t i = 0; i < count; i++) {
         avg.x += vertices[i].x;
@@ -71,7 +97,7 @@ Point2 averagePoint (const Point2 * vertices, size_t count) {
 //-----------------------------------------------------------------------------
 // Get furthest vertex along a certain direction
 
-size_t indexOfFurthestPoint (const Point2 * vertices, size_t count, Point2 d) {
+size_t indexOfFurthestPoint (const vector<Point2> vertices, size_t count, Point2 d) {
     
     float maxProduct = dotProduct (d, vertices[0]);
     size_t index = 0;
@@ -88,14 +114,14 @@ size_t indexOfFurthestPoint (const Point2 * vertices, size_t count, Point2 d) {
 //-----------------------------------------------------------------------------
 // Minkowski sum support function for GJK
 
-Point2 support (const Point2 * vertices1, size_t count1,
-              const Point2 * vertices2, size_t count2, Point2 d) {
+Point2 support (const vector<Point2> vertices1, size_t count1,
+            const vector<Point2> vertices2, size_t count2, Point2 d) {
 
     // get furthest point of first body along an arbitrary direction
     size_t i = indexOfFurthestPoint (vertices1, count1, d);
     
     // get furthest point of second body along the opposite direction
-    size_t j = indexOfFurthestPoint (vertices2, count2, negate (d));
+    size_t j = indexOfFurthestPoint (vertices2, count2, negatePoint (d));
 
     // subtract (Minkowski sum) the two points to see if bodies 'overlap'
     return subtract (vertices1[i], vertices2[j]);
@@ -106,10 +132,16 @@ Point2 support (const Point2 * vertices1, size_t count1,
 
 
 
-int gjk (const Point2 * vertices1, size_t count1,
-         const Point2 * vertices2, size_t count2) {
+int gjk (const vector<Point2> vertices1, size_t count1,
+         const vector<Point2> vertices2, size_t count2) {
     
+    // ! Start clock timer
+    auto end = std::chrono::high_resolution_clock::now();
+    auto start = std::chrono::high_resolution_clock::now();
+
+
     int iter_count = 0;
+    int result = 0;
 
     size_t index = 0; // index of current vertex of simplex
     Point2 a, b, c, d, ao, ab, ac, abperp, acperp, simplex[3];
@@ -127,20 +159,23 @@ int gjk (const Point2 * vertices1, size_t count1,
     // set the first support as initial point of the new simplex
     a = simplex[0] = support (vertices1, count1, vertices2, count2, d);
     
-    if (dotProduct (a, d) <= 0)
+    if (dotProduct (a, d) <= 0) {
+        // ! END CLOCK TIMER & Print time
+        // time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end - start).count();
+        // cout << "GJK Elapsed time: " << time_span << " seconds." << endl;        
         return 0; // no collision
-    
-    d = negate (a); // The next search direction is always towards the origin, so the next search direction is negate(a)
+    }
+    d = negatePoint (a); // The next search direction is always towards the origin, so the next search direction is negatePoint(a)
     
     while (iter_count < 100) {
         iter_count++;
         
         a = simplex[++index] = support (vertices1, count1, vertices2, count2, d);
         
-        if (dotProduct (a, d) <= 0)
+        if (dotProduct (a, d) <= 0) {
             return 0; // no collision
-        
-        ao = negate (a); // from point A to Origin is just negative A
+        }
+        ao = negatePoint (a); // from point A to Origin is just negative A
         
         // simplex has 2 points (a line segment, not a triangle yet)
         if (index < 2) {
@@ -167,9 +202,16 @@ int gjk (const Point2 * vertices1, size_t count1,
             
             abperp = tripleProduct (ac, ab, ab);
             
-            if (dotProduct (abperp, ao) < 0)
-                return 1; // collision
-            
+            if (dotProduct (abperp, ao) < 0) {
+                
+                // ! END CLOCK TIMER & Print time
+                // end = std::chrono::steady_clock::now();
+                // time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end - start).count();
+                // cout << "GJK Elapsed time: " << time_span << " seconds." << endl;
+                result = 1; // collision
+                break;
+                
+            }
             simplex[0] = simplex[1]; // swap first element (point C)
 
             d = abperp; // new direction is normal to AB towards Origin
@@ -178,8 +220,18 @@ int gjk (const Point2 * vertices1, size_t count1,
         simplex[1] = simplex[2]; // swap element in the middle (point B)
         --index;
     }
+
+    #ifdef DEBUG
+    if (result == 1) {
+        end = std::chrono::high_resolution_clock::now();
+        auto duration = (end - start);
+        auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(duration); // Microsecond (as int)
+        cout << "Duration = " << ns.count() << "ns" << endl;
+    }
+    #endif
     
-    return 0;
+
+    return result;
 }
 
 //-----------------------------------------------------------------------------
@@ -200,7 +252,6 @@ Point2 Jostle(Point2 a)
 	return b;
 }
 
-using namespace std;
 
 // A global Point2 needed for sorting points with reference
 // to the first Point2 Used in compare function of qsort()
@@ -262,9 +313,11 @@ int compare(const void *vp1, const void *vp2)
 }
 
 // Prints convex hull of a set of n points.
-void convexHull(Point2 *points)
+vector<Point2> convexHull(vector<Point2> points, int n)
 {
-    int n = NUM_VERTICES;
+    // returned polygon (empty initialization)
+    vector<Point2> polygon;
+
 	// Find the bottommost Point2
 	int ymin = points[0].y, min = 0;
 	for (int i = 1; i < n; i++)
@@ -309,7 +362,7 @@ void convexHull(Point2 *points)
 
 	// If modified array of points has less than 3 points,
 	// convex hull is not possible
-	if (m < 3) return;
+	if (m < 3) return polygon;
 
 	// Create an empty stack and push first three points
 	// to it.
@@ -329,59 +382,64 @@ void convexHull(Point2 *points)
 		S.push(points[i]);
 	}
 	
-	vector<Point2> pointVector;
-
+	#ifdef DEBUG_POLY_GENERATION
+        cout << "Generated polygon:" << endl;
+    #endif
+    
 	// Now stack has the output points, print contents of stack
 	while (!S.empty())
 	{
 		Point2 p = S.top();
-		cout << "(" << p.x << ", " << p.y <<")" << endl;
 		S.pop();
-		pointVector.push_back(p);
+		polygon.push_back(p);
+
+        #ifdef DEBUG_POLY_GENERATION
+            cout << "(" << p.x << ", " << p.y <<")" << endl;
+        #endif
 	}
-
-	Point2 out[NUM_VERTICES];
-	copy(pointVector.begin(), pointVector.end(), out);
-
-	points = out;
+    #ifdef DEBUG_POLY_GENERATION
+        cout << "End of generated polygon...." << endl;
+    #endif
+    
+    return polygon;
 }
 
-void randomPoints(Point2 *randomPoints, const int n) {
+vector<Point2> randomPoints(const int n, int sizeX, int sizeY, float shiftX = 0, float shiftY = 0) {
     int x, y;
-    srand (time(NULL));
-
-    vector<Point2> points;
-    
+    // srand (time(NULL));
+    vector<Point2> randomPoints;
     for (int i = 0; i < n; i++) {
-        x = rand() % 15;
-        y = rand() % 15;
+        x = rand() % sizeX;
+        y = rand() % sizeY;
 
         Point2 element;
-        element.x = x;
-        element.y = y;
+        element.x = x + shiftX;
+        element.y = y + shiftY;
 
-        points.push_back(element);
-    }
-    const int length = sizeof (points) / sizeof (Point2);
-    Point2 out[length];
-    for(int i = 0; i < points.size(); i++)
-    {
-        out[i] = points[i];
+        randomPoints.push_back(element);
     }
 
-    randomPoints = out;
+    return randomPoints;
 }
 
-void generateRandomPolygon(Point2 *polygon, int n) {
-    Point2 randPoints[1];
-    
-    randomPoints(randPoints, n);
+/**
+ * @brief Generates random polygon.
+ *          First generates point cloud of size n
+ *          Then creates convex polygon from convex hull of the cloud
+ *  
+ * @param n number of points in random point cloud
+ * @return vector of points representing polygon
+ */
+vector<Point2> generateRandomPolygon(int n, int sizeX, int sizeY, float shiftX = 0, float shiftY = 0) {
+    #ifdef DEBUG_POLY_GENERATION
+        printf("Generating polygon with max bounded size (%d, %d) shifted by (%f, %f)...\n", sizeX, sizeY, shiftX, shiftY);
+    #endif
+
+    vector<Point2> randPoints = randomPoints(n, sizeX, sizeY, shiftX, shiftY);
  
-    convexHull(randPoints);
+    vector<Point2> polygon = convexHull(randPoints, n);
 
-    polygon = randPoints;
-
-    return;
+    return polygon;
 }
 
 void printToFile(Point2 *polygon1, int length1)
@@ -396,60 +454,141 @@ void printToFile(Point2 *polygon1, int length1)
     {
         num_obj ++;
     }
-    object1.open(fileName + std::to_string(num_obj));
-    for(int x = 0; x < length1; x++)
-    {
-        object1 << polygon1[x].x << " " << polygon1[x].y << std::endl;
-    }
 
+    randomPoints = out;
+}
+
+/**
+ * @brief Generates random polygon.
+ *          First generates point cloud of size n
+ *          Then creates convex polygon from convex hull of the cloud
+ *  
+ * @param n number of points in random point cloud
+ * @return vector of points representing polygon
+ */
+vector<Point2> generateRandomPolygon(int n, int sizeX, int sizeY, float shiftX = 0, float shiftY = 0) {
+    #ifdef DEBUG_POLY_GENERATION
+        printf("Generating polygon with max bounded size (%d, %d) shifted by (%f, %f)...\n", sizeX, sizeY, shiftX, shiftY);
+    #endif
+
+    vector<Point2> randPoints = randomPoints(n, sizeX, sizeY, shiftX, shiftY);
+ 
+    vector<Point2> polygon = convexHull(randPoints, n);
+
+    return;
 }
 
 int main(int argc, const char * argv[]) {
-       
-    Point2 vertices1[1];
-    Point2 vertices2[1];
 
-    generateRandomPolygon(vertices1, 100);
-    generateRandomPolygon(vertices2, 100);
-    
+    /**
+     * @brief: main method for GJK serial testing
+     * 
+     * @run: terminal commands:
+     *      compile: g++ -o gjk gjk.cpp -pg -g
+     *      run: gjk
+     *      profile: gprof -a gjk.exe > [output file name]
+     * 
+     * @structure: organized as a 2 phase execution:
+     * 
+     * Phase 1: generate random polygons in a loop
+     *      - Store polygons in a vector
+     * 
+     * Phase 2: find collisions between the polygons:
+     *      - check for collisions between each unique pair of polygons 
+     */
 
+    // Polygon Parameters
+    const int sqrt_num_polygons = 64; // sqrt(number of polygons generated)
+    const int num_polygons = sqrt_num_polygons * sqrt_num_polygons;
+    const int dimX = 50; // max x dimension of polygon
+    const int dimY = 50; // max y dimension of polygon
+    const int num_rand_points = 200; // number of random points to generate each poly
+    const float space_factor = 0.4; // fraction of dim that polygons are displaced by
 
-    // Point2 vertices1[] = {
-    //     { 4.0f, 11.0f },
-    //     { 5.0f, 5.0f },
-    //     { 9.0f, 9.0f },
-    // };
-    
-    // Point2 vertices2[] = {
-    //     { 4.0f, 11.0f },
-    //     { 5.0f, 5.0f },
-    //     { 9.0f, 9.0f },
-    // };
+    int total_num_points = 0; // stats variable
+    int locX, locY;
+    srand (time(NULL));
 
-    size_t count1 = sizeof (vertices1) / sizeof (Point2); // == 3
-    size_t count2 = sizeof (vertices2) / sizeof (Point2); // == 4
+    // polygon vector
+    vector<Poly> polygons;
+    /**
+     * @brief Generate polygons in a loop
+     * 
+     * @param total_num_points calculates total number of points for averaging later
+     * 
+     */
+    for (int x = 0; x < sqrt_num_polygons; x++) {
+        for (int y = 0; y < sqrt_num_polygons; y++) {
+            locX = x * (dimX * space_factor);
+            locY = y * (dimY * space_factor);
+            vector<Point2> vertices = generateRandomPolygon(num_rand_points, dimX, dimY, locX, locY);
+            Poly curr_poly = Poly(vertices);
+            polygons.push_back(curr_poly);
 
-	for(int runs = 0; runs < 4; runs++)
+            total_num_points += vertices.size();
+        }
+    }
+
+    float average_num_points = total_num_points/(1.0f * num_polygons);
+
+    // Stats variables
+    int num_gjk = 0, num_collisions = 0;
+    auto start = std::chrono::high_resolution_clock::now();
+
+    /**
+     * @brief GJK Call Loop
+     * 
+     * Iterates over all unique polygon pairs and calls GJK on them.
+     * 
+     */
+	for(int runs = 0; runs < (num_polygons - 1); runs++)
 	{
-		Point2 a[sizeof (vertices1) / sizeof (Point2)];
-		Point2 b[sizeof (vertices2) / sizeof (Point2)];
+        for (int comp = runs + 1; comp < num_polygons; comp++) {
+            vector<Point2> a = polygons[runs].vertices;
+            vector<Point2> b = polygons[comp].vertices;
 
-		for (size_t i = 0; i < count1; ++i) a[i] = Jostle(vertices1[i]);
-		for (size_t i = 0; i < count2; ++i) b[i] = Jostle(vertices2[i]);
+            size_t count1 = a.size();
+            size_t count2 = b.size(); 
 
-		int collisionDetected = gjk (a, count1, b, count2);
-		if (!collisionDetected)
-		{
-			printf("Found failing case:\n\t{%f, %f}, {%f, %f}, {%f, %f}\n\t{%f, %f}, {%f, %f}, {%f, %f}\n\n",
-				a[0].x, a[0].y, a[1].x, a[1].y, a[2].x, a[2].y,
-				b[0].x, b[0].y, b[1].x, b[1].y, b[2].x, b[2].y
-			);
-		}
-		else
-		{
-			printf("Collision correctly detected\n");
-		}
+            num_gjk++;
+            int collisionDetected = gjk (a, count1, b, count2);
+
+            if (!collisionDetected)
+            {
+                // printf("No collision detected\n");
+            }
+            else
+            {   
+                num_collisions++;
+                #ifdef DEBUG
+                    printf("Collision correctly detected between Polygon %d and Polygon %d\n", runs, comp);
+                #endif
+            }
+        }
 	}
+
+
+    // Timing
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = (end - start);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration); // Microsecond (as int)
+    float total_time_ms = 1.0f * ms.count();
+    float avg_time_ms = total_time_ms/num_gjk;
+
+    // Summary
+    printf("\n\n");
+    printf("=====================================================\n");
+    printf("=================  Main completed  ==================\n");
+    printf("=====================================================\n");
+    printf("======   Num Polygons = %d\n", num_polygons); 
+    printf("======   Avg num points = %f\n", average_num_points);
+    printf("======   GJK run on %d pairs of polygons\n", num_gjk);
+    printf("======   Total Num collisions: %d\n", num_collisions);
+    printf("======   Total time for GJK = %f seconds\n", (total_time_ms/1000));
+    printf("======   Average time per GJK call = %f ms\n", avg_time_ms);
+    printf("=====================================================\n");
+    printf("=================  End of Summary  ==================\n");
+    printf("=====================================================\n");
     
     exit(0);
 }

@@ -134,9 +134,15 @@ Point2 support (const vector<Point2> vertices1, size_t count1,
 
 
 int gjk (const vector<Point2> vertices1, size_t count1,
-         const vector<Point2> vertices2, size_t count2) {
+         const vector<Point2> vertices2, size_t count2, bool timer) {
     
     // ! Start clock timer
+    struct timespec start, stop;
+    double time;
+    // start clock
+    if (timer) {
+        if( clock_gettime(CLOCK_REALTIME, &start) == -1) { perror("clock gettime");}
+    }
     
 
     int iter_count = 0;
@@ -160,8 +166,11 @@ int gjk (const vector<Point2> vertices1, size_t count1,
     
     if (dotProduct (a, d) <= 0) {
         // ! END CLOCK TIMER & Print time
-        // time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end - start).count();
-        // cout << "GJK Elapsed time: " << time_span << " seconds." << endl;        
+        if (timer) {
+            if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
+            time = (double)(stop.tv_nsec - start.tv_nsec);
+            printf("======   GJK CALL TIME = %f nanoseconds\n", time);
+        }       
         return 0; // no collision
     }
     d = negatePoint (a); // The next search direction is always towards the origin, so the next search direction is negatePoint(a)
@@ -172,7 +181,7 @@ int gjk (const vector<Point2> vertices1, size_t count1,
         a = simplex[++index] = support (vertices1, count1, vertices2, count2, d);
         
         if (dotProduct (a, d) <= 0) {
-            return 0; // no collision
+            break; // no collision
         }
         ao = negatePoint (a); // from point A to Origin is just negative A
         
@@ -218,6 +227,12 @@ int gjk (const vector<Point2> vertices1, size_t count1,
         
         simplex[1] = simplex[2]; // swap element in the middle (point B)
         --index;
+    }
+
+    if (timer) {
+        if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
+        time = (double)(stop.tv_nsec - start.tv_nsec);
+        printf("======   GJK CALL TIME = %f nanoseconds with %d iterations\n", time, iter_count);
     }
    
 
@@ -464,7 +479,6 @@ int main(int argc, const char * argv[]) {
 
     int total_num_points = 0; // stats variable
     int locX, locY;
-    int x = 0, y = 0;
     srand (time(NULL));
 
     // polygon vector
@@ -475,8 +489,8 @@ int main(int argc, const char * argv[]) {
      * @param total_num_points calculates total number of points for averaging later
      * 
      */
-    for (x = 0; x < sqrt_NUM_POLYGONS; x++) {
-        for (y = 0; y < sqrt_NUM_POLYGONS; y++) {
+    for (int x = 0; x < sqrt_NUM_POLYGONS; x++) {
+        for (int y = 0; y < sqrt_NUM_POLYGONS; y++) {
             locX = x * (dimX * space_factor);
             locY = y * (dimY * space_factor);
             vector<Point2> vertices = generateRandomPolygon(num_rand_points, dimX, dimY, locX, locY);
@@ -506,8 +520,7 @@ int main(int argc, const char * argv[]) {
 
     
     int loop_iter = 0;
-    x = 0;
-    y = 0;
+
     /**
      * @brief GJK Call Loop
      * 
@@ -518,7 +531,7 @@ int main(int argc, const char * argv[]) {
     const int block = NUM_POLYGONS/NUM_THREADS;
     omp_set_num_threads(NUM_THREADS);
     printf("============  Entering Parallel Portion  ============\n");
-    #pragma omp parallel shared (polygons, num_collisions) private(x, y, count1, count2, collisionDetected)
+    #pragma omp parallel shared (polygons, num_collisions) private(count1, count2, collisionDetected)
     {        
         #pragma omp sections nowait
         {
@@ -527,16 +540,23 @@ int main(int argc, const char * argv[]) {
                 vector<Poly> local_vec = polygons;
                 printf("Section 1 starting...\n");
                 int num_calls = 0;
-                for (y = 0; y < block; y++ ) {
-                    for (x = y + 1; x < NUM_POLYGONS; x++) {
+                bool show_time = false;
+                for (int y = 0; y < block; y++ ) {
+                    for (int x = y + 1; x < NUM_POLYGONS; x++) {
                         num_calls++;
                         vector<Point2> a = local_vec[x].vertices;
                         vector<Point2> b = local_vec[y].vertices;
 
                         count1 = a.size();
-                        count2 = b.size(); 
+                        count2 = b.size();
 
-                        collisionDetected = gjk (a, count1, b, count2);
+                        if (y == 0 && x == y+1) {
+                            show_time = true;
+                        } else {
+                            show_time = false;
+                        } 
+
+                        collisionDetected = gjk (a, count1, b, count2, show_time);
 
                         if (!collisionDetected)
                         {
@@ -561,16 +581,23 @@ int main(int argc, const char * argv[]) {
                 printf("Section 2 starting...\n");
                 vector<Poly> local_vec = polygons;
                 int num_calls = 0;
-                for (y = block; y < 2 * block; y++) {
-                    for (x = y + 1; x < NUM_POLYGONS; x++) {
+                bool show_time = false;
+                for (int y = block; y < 2 * block; y++) {
+                    for (int x = y + 1; x < NUM_POLYGONS; x++) {
                         num_calls++;
                         vector<Point2> a = local_vec[x].vertices;
                         vector<Point2> b = local_vec[y].vertices;
 
                         count1 = a.size();
-                        count2 = b.size(); 
+                        count2 = b.size();
 
-                        collisionDetected = gjk (a, count1, b, count2);
+                        if (y == block && x == y+1) {
+                            show_time = true;
+                        } else {
+                            show_time = false;
+                        }
+
+                        collisionDetected = gjk (a, count1, b, count2, show_time);
 
                         if (!collisionDetected)
                         {
@@ -595,16 +622,23 @@ int main(int argc, const char * argv[]) {
                 printf("Section 3 starting...\n");
                 vector<Poly> local_vec = polygons;
                 int num_calls = 0;
-                for (y = 2 * block; y < 3 * block; y++) {
-                    for (x = y + 1; x < NUM_POLYGONS; x++) {
+                bool show_time = false;
+                for (int y = 2 * block; y < 3 * block; y++) {
+                    for (int x = y + 1; x < NUM_POLYGONS; x++) {
                         num_calls++;
                         vector<Point2> a = local_vec[x].vertices;
                         vector<Point2> b = local_vec[y].vertices;
 
                         count1 = a.size();
                         count2 = b.size(); 
+                        
+                        if (y == 2 * block && x == y+1) {
+                            show_time = true;
+                        } else {
+                            show_time = false;
+                        }
 
-                        collisionDetected = gjk (a, count1, b, count2);
+                        collisionDetected = gjk (a, count1, b, count2, show_time);
 
                         if (!collisionDetected)
                         {
@@ -629,8 +663,9 @@ int main(int argc, const char * argv[]) {
                 printf("Section 4 starting...\n");
                 vector<Poly> local_vec = polygons;
                 int num_calls = 0;
-                for (y = 3 * block; y < NUM_POLYGONS - 1; y ++) {
-                    for (x = y + 1; x < NUM_POLYGONS; x++) {
+                bool show_time = false;
+                for (int y = 3 * block; y < NUM_POLYGONS - 1; y ++) {
+                    for (int x = y + 1; x < NUM_POLYGONS; x++) {
                         num_calls++;
                         vector<Point2> a = local_vec[x].vertices;
                         vector<Point2> b = local_vec[y].vertices;
@@ -638,7 +673,13 @@ int main(int argc, const char * argv[]) {
                         count1 = a.size();
                         count2 = b.size(); 
 
-                        collisionDetected = gjk (a, count1, b, count2);
+                        if (y == 3* block && x == y+1) {
+                            show_time = true;
+                        } else {
+                            show_time = false;
+                        }
+
+                        collisionDetected = gjk (a, count1, b, count2, show_time);
 
                         if (!collisionDetected)
                         {

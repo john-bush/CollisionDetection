@@ -1,0 +1,85 @@
+=====================================================
+==================  Main Started  ===================
+=====================================================
+============  Entering Parallel Portion  ============
+======   GJK CALL TIME = 37792.000000 nanoseconds
+======   GJK CALL TIME = 285876.000000 nanoseconds
+======   GJK CALL TIME = 276831.000000 nanoseconds
+======   GJK CALL TIME = 304914.000000 nanoseconds
+======   GJK CALL TIME = 263217.000000 nanoseconds
+======   GJK CALL TIME = 268789.000000 nanoseconds
+======   GJK CALL TIME = 274966.000000 nanoseconds
+======   GJK CALL TIME = 324423.000000 nanoseconds
+======   GJK CALL TIME = 318179.000000 nanoseconds
+======   GJK CALL TIME = 250494.000000 nanoseconds
+======   GJK CALL TIME = 266295.000000 nanoseconds
+======   GJK CALL TIME = 416513.000000 nanoseconds
+
+
+=====================================================
+=================  Main completed  ==================
+=====================================================
+======   Num Threads = 4
+======   Num Polygons = 1024
+======   Avg num points = 11.027344
+======   GJK run on 523776 pairs of polygons
+======   Total Num collisions: 6869
+======   Total time for GJK = 39.333916 seconds
+======   Average time per GJK call = 0.000075 ms
+=====================================================
+=================  End of Summary  ==================
+=====================================================
+
+=====================================================
+==================  Main Started  ===================
+=====================================================
+============  Entering Parallel Portion  ============
+======   GJK CALL TIME = 24927.000000 nanoseconds
+======   GJK CALL TIME = 24029.000000 nanoseconds
+======   GJK CALL TIME = 21942.000000 nanoseconds
+
+
+=====================================================
+=================  Main completed  ==================
+=====================================================
+======   Num Threads = 1
+======   Num Polygons = 1024
+======   Avg num points = 10.966797
+======   GJK run on 523776 pairs of polygons
+======   Total Num collisions: 11964
+======   Total time for GJK = 11.022461 seconds
+======   Average time per GJK call = 0.000021 ms
+=====================================================
+=================  End of Summary  ==================
+=====================================================
+
+
+=====================================================
+==================  Main Started  ===================
+=====================================================
+============  Entering Parallel Portion  ============
+======   GJK CALL TIME = 380044.000000 nanoseconds
+======   GJK CALL TIME = 422263.000000 nanoseconds
+======   GJK CALL TIME = 341233.000000 nanoseconds
+======   GJK CALL TIME = 394559.000000 nanoseconds
+======   GJK CALL TIME = 294158.000000 nanoseconds
+======   GJK CALL TIME = 390824.000000 nanoseconds
+======   GJK CALL TIME = 406457.000000 nanoseconds
+======   GJK CALL TIME = 450833.000000 nanoseconds
+======   GJK CALL TIME = 410336.000000 nanoseconds
+
+
+=====================================================
+=================  Main completed  ==================
+=====================================================
+======   Num Threads = 4
+======   Num Polygons = 1024
+======   Avg num points = 10.867188
+======   GJK run on 523776 pairs of polygons
+======   Total Num collisions: 6821
+======   Total time for GJK = 34.101957 seconds
+======   Average time per GJK call = 0.000065 ms
+=====================================================
+=================  End of Summary  ==================
+=====================================================
+

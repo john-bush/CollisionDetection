@@ -1,4 +1,4 @@
-#include "omp.h"
+#include <omp.h>
 #include <stdio.h>
 #include <iostream>
 #include <stack>
@@ -465,8 +465,8 @@ int main(int argc, const char * argv[]) {
      */
 
     // Polygon Parameters
-    const int sqrt_num_polygons = 64; // sqrt(number of polygons generated)
-    const int num_polygons = sqrt_num_polygons * sqrt_num_polygons;
+    const int sqrt_NUM_POLYGONS = 64; // sqrt(number of polygons generated)
+    const int NUM_POLYGONS = sqrt_NUM_POLYGONS * sqrt_NUM_POLYGONS;
     const int dimX = 50; // max x dimension of polygon
     const int dimY = 50; // max y dimension of polygon
     const int num_rand_points = 200; // number of random points to generate each poly
@@ -474,6 +474,7 @@ int main(int argc, const char * argv[]) {
 
     int total_num_points = 0; // stats variable
     int locX, locY;
+    int x = 0, y = 0;
     srand (time(NULL));
 
     // polygon vector
@@ -484,8 +485,8 @@ int main(int argc, const char * argv[]) {
      * @param total_num_points calculates total number of points for averaging later
      * 
      */
-    for (int x = 0; x < sqrt_num_polygons; x++) {
-        for (int y = 0; y < sqrt_num_polygons; y++) {
+    for (x = 0; x < sqrt_NUM_POLYGONS; x++) {
+        for (y = 0; y < sqrt_NUM_POLYGONS; y++) {
             locX = x * (dimX * space_factor);
             locY = y * (dimY * space_factor);
             vector<Point2> vertices = generateRandomPolygon(num_rand_points, dimX, dimY, locX, locY);
@@ -496,11 +497,25 @@ int main(int argc, const char * argv[]) {
         }
     }
 
-    float average_num_points = total_num_points/(1.0f * num_polygons);
+    float average_num_points = total_num_points/(1.0f * NUM_POLYGONS);
 
     // Stats variables
-    int num_gjk = 0, num_collisions = 0;
-    auto start = std::chrono::high_resolution_clock::now();
+    int NUM_PAIRS = NUM_POLYGONS * (NUM_POLYGONS - 1) / 2;
+    int num_collisions = 0;
+
+    struct timespec start, stop;
+    double time;
+
+
+    // start clock
+    if( clock_gettime(CLOCK_REALTIME, &start) == -1) { perror("clock gettime");}
+
+    const int NUM_THREADS = 16;
+
+    // thread private variables
+    size_t count1 = 0, count2 = 0;
+    int collisionDetected = 0, tid = 0;
+
 
     /**
      * @brief GJK Call Loop
@@ -508,51 +523,56 @@ int main(int argc, const char * argv[]) {
      * Iterates over all unique polygon pairs and calls GJK on them.
      * 
      */
-	for(int runs = 0; runs < (num_polygons - 1); runs++)
-	{
-        for (int comp = runs + 1; comp < num_polygons; comp++) {
-            vector<Point2> a = polygons[runs].vertices;
-            vector<Point2> b = polygons[comp].vertices;
+    #pragma omp parallel shared (polygons, num_collisions) private(tid, count1, count2, collisionDetected)
+    {
+        tid = omp_get_thread_num();
+        #pragma omp for schedule(dynamic) collapse(2)    
+        for(x = 0; x < (NUM_POLYGONS - 1); x++)
+        {
+            for (y = x + 1; y < NUM_POLYGONS; y++) {
+                vector<Point2> a = polygons[x].vertices;
+                vector<Point2> b = polygons[y].vertices;
 
-            size_t count1 = a.size();
-            size_t count2 = b.size(); 
+                count1 = a.size();
+                count2 = b.size(); 
 
-            num_gjk++;
-            int collisionDetected = gjk (a, count1, b, count2);
+                collisionDetected = gjk (a, count1, b, count2);
 
-            if (!collisionDetected)
-            {
-                // printf("No collision detected\n");
-            }
-            else
-            {   
-                num_collisions++;
-                #ifdef DEBUG
-                    printf("Collision correctly detected between Polygon %d and Polygon %d\n", runs, comp);
-                #endif
+                if (!collisionDetected)
+                {
+                    // printf("No collision detected\n");
+                }
+                else
+                {   
+                    #pragma omp atomic
+                    num_collisions++;
+                    
+                    #ifdef DEBUG
+                        printf("Collision correctly detected between Polygon %d and Polygon %d\n", x, y);
+                    #endif
+                }
             }
         }
-	}
+    }
 
 
     // Timing
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = (end - start);
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration); // Microsecond (as int)
-    float total_time_ms = 1.0f * ms.count();
-    float avg_time_ms = total_time_ms/num_gjk;
+	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
+    time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
+
+    float avg_time_sec = time/NUM_PAIRS;
 
     // Summary
     printf("\n\n");
     printf("=====================================================\n");
     printf("=================  Main completed  ==================\n");
     printf("=====================================================\n");
-    printf("======   Num Polygons = %d\n", num_polygons); 
+    printf("======   Num Polygons = %d\n", NUM_POLYGONS); 
     printf("======   Avg num points = %f\n", average_num_points);
-    printf("======   GJK run on %d pairs of polygons\n", num_gjk);
+    printf("======   GJK run on %d pairs of polygons\n", NUM_PAIRS);
     printf("======   Total Num collisions: %d\n", num_collisions);
-    printf("======   Total time for GJK = %f seconds\n", (total_time_ms/1000));
-    printf("======   Average time per GJK call = %f ms\n", avg_time_ms);
+    printf("======   Total time for GJK = %f seconds\n", time);
+    printf("======   Average time per GJK call = %f ms\n", avg_time_sec);
     printf("=====================================================\n");
     printf("=================  End of Summary  ==================\n");
     printf("=====================================================\n");

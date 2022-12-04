@@ -1,3 +1,4 @@
+#include <omp.h>
 #include <stdio.h>
 #include <iostream>
 #include <stack>
@@ -95,6 +96,7 @@ Point2 averagePoint (const vector<Point2> vertices, size_t count) {
 
 //-----------------------------------------------------------------------------
 // Get furthest vertex along a certain direction
+// ! this function is very costly in terms of runtime
 
 size_t indexOfFurthestPoint (const vector<Point2> vertices, size_t count, Point2 d) {
     
@@ -132,13 +134,10 @@ Point2 support (const vector<Point2> vertices1, size_t count1,
 
 
 int gjk (const vector<Point2> vertices1, size_t count1,
-         const vector<Point2> vertices2, size_t count2, bool debug = false) {
-
-
-    struct timespec start, stop;
-    double time;
-    // start clock
-    if( clock_gettime(CLOCK_REALTIME, &start) == -1) { perror("clock gettime");}
+         const vector<Point2> vertices2, size_t count2) {
+    
+    // ! Start clock timer
+    
 
     int iter_count = 0;
     int result = 0;
@@ -219,11 +218,8 @@ int gjk (const vector<Point2> vertices1, size_t count1,
         
         simplex[1] = simplex[2]; // swap element in the middle (point B)
         --index;
-    } 
-
-    if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
-    time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;  
-    printf("======   GJK CALL TIME = %f seconds\n", time);
+    }
+   
 
     return result;
 }
@@ -445,7 +441,7 @@ int main(int argc, const char * argv[]) {
      * @brief: main method for GJK serial testing
      * 
      * @run: terminal commands:
-     *      compile: g++ -o gjk gjk.cpp -pg -g
+     *      compile: g++ -o gjk gjk_for.cpp -pg -g
      *      run: gjk
      *      profile: gprof -a gjk.exe > [output file name]
      * 
@@ -459,8 +455,8 @@ int main(int argc, const char * argv[]) {
      */
 
     // Polygon Parameters
-    const int sqrt_num_polygons = 32; // sqrt(number of polygons generated)
-    const int num_polygons = sqrt_num_polygons * sqrt_num_polygons;
+    const int sqrt_NUM_POLYGONS = 32; // sqrt(number of polygons generated)
+    const int NUM_POLYGONS = sqrt_NUM_POLYGONS * sqrt_NUM_POLYGONS;
     const int dimX = 50; // max x dimension of polygon
     const int dimY = 50; // max y dimension of polygon
     const int num_rand_points = 200; // number of random points to generate each poly
@@ -468,6 +464,7 @@ int main(int argc, const char * argv[]) {
 
     int total_num_points = 0; // stats variable
     int locX, locY;
+    int x = 0, y = 0;
     srand (time(NULL));
 
     // polygon vector
@@ -478,8 +475,8 @@ int main(int argc, const char * argv[]) {
      * @param total_num_points calculates total number of points for averaging later
      * 
      */
-    for (int x = 0; x < sqrt_num_polygons; x++) {
-        for (int y = 0; y < sqrt_num_polygons; y++) {
+    for (x = 0; x < sqrt_NUM_POLYGONS; x++) {
+        for (y = 0; y < sqrt_NUM_POLYGONS; y++) {
             locX = x * (dimX * space_factor);
             locY = y * (dimY * space_factor);
             vector<Point2> vertices = generateRandomPolygon(num_rand_points, dimX, dimY, locX, locY);
@@ -490,10 +487,11 @@ int main(int argc, const char * argv[]) {
         }
     }
 
-    float average_num_points = total_num_points/(1.0f * num_polygons);
+    float average_num_points = total_num_points/(1.0f * NUM_POLYGONS);
 
     // Stats variables
-    int num_gjk = 0, num_collisions = 0;
+    int NUM_PAIRS = NUM_POLYGONS * (NUM_POLYGONS - 1) / 2;
+    int num_collisions = 0;
 
     struct timespec start, stop;
     double time;
@@ -502,55 +500,182 @@ int main(int argc, const char * argv[]) {
     // start clock
     if( clock_gettime(CLOCK_REALTIME, &start) == -1) { perror("clock gettime");}
 
+    // thread private variables
+    size_t count1 = 0, count2 = 0;
+    int collisionDetected = 0, tid = 0;
+
+    
+    int loop_iter = 0;
+    x = 0;
+    y = 0;
     /**
      * @brief GJK Call Loop
      * 
      * Iterates over all unique polygon pairs and calls GJK on them.
      * 
      */
+    const int NUM_THREADS = 4;
+    const int block = NUM_POLYGONS/NUM_THREADS;
+    omp_set_num_threads(NUM_THREADS);
     printf("============  Entering Parallel Portion  ============\n");
-
-	for(int runs = 0; runs < (num_polygons - 1); runs++)
-	{
-        for (int comp = runs + 1; comp < num_polygons; comp++) {
-            vector<Point2> a = polygons[runs].vertices;
-            vector<Point2> b = polygons[comp].vertices;
-
-            size_t count1 = a.size();
-            size_t count2 = b.size(); 
-
-            num_gjk++;
-            int collisionDetected = gjk (a, count1, b, count2);
-
-            if (!collisionDetected)
+    #pragma omp parallel shared (polygons, num_collisions) private(x, y, count1, count2, collisionDetected)
+    {        
+        #pragma omp sections nowait
+        {
+            #pragma omp section 
             {
-                // printf("No collision detected\n");
+                vector<Poly> local_vec = polygons;
+                printf("Section 1 starting...\n");
+                int num_calls = 0;
+                for (y = 0; y < block; y++ ) {
+                    for (x = y + 1; x < NUM_POLYGONS; x++) {
+                        num_calls++;
+                        vector<Point2> a = local_vec[x].vertices;
+                        vector<Point2> b = local_vec[y].vertices;
+
+                        count1 = a.size();
+                        count2 = b.size(); 
+
+                        collisionDetected = gjk (a, count1, b, count2);
+
+                        if (!collisionDetected)
+                        {
+                            // printf("No collision detected\n");
+                        }
+                        else
+                        {   
+                            #pragma omp atomic
+                            num_collisions++;
+                            
+                            #ifdef DEBUG
+                                printf("Collision correctly detected between Polygon %d and Polygon %d\n", x, y);
+                            #endif
+                        }
+                    }
+                }
+                printf("Number of calls in section 1: %d\n", num_calls);
             }
-            else
-            {   
-                num_collisions++;
-                #ifdef DEBUG
-                    printf("Collision correctly detected between Polygon %d and Polygon %d\n", runs, comp);
-                #endif
+
+            #pragma omp section 
+            {
+                printf("Section 2 starting...\n");
+                vector<Poly> local_vec = polygons;
+                int num_calls = 0;
+                for (y = block; y < 2 * block; y++) {
+                    for (x = y + 1; x < NUM_POLYGONS; x++) {
+                        num_calls++;
+                        vector<Point2> a = local_vec[x].vertices;
+                        vector<Point2> b = local_vec[y].vertices;
+
+                        count1 = a.size();
+                        count2 = b.size(); 
+
+                        collisionDetected = gjk (a, count1, b, count2);
+
+                        if (!collisionDetected)
+                        {
+                            // printf("No collision detected\n");
+                        }
+                        else
+                        {   
+                            #pragma omp atomic
+                            num_collisions++;
+                            
+                            #ifdef DEBUG
+                                printf("Collision correctly detected between Polygon %d and Polygon %d\n", x, y);
+                            #endif
+                        }
+                    }
+                }
+                printf("Number of calls in section 2: %d\n", num_calls);
+            }
+
+            #pragma omp section 
+            {
+                printf("Section 3 starting...\n");
+                vector<Poly> local_vec = polygons;
+                int num_calls = 0;
+                for (y = 2 * block; y < 3 * block; y++) {
+                    for (x = y + 1; x < NUM_POLYGONS; x++) {
+                        num_calls++;
+                        vector<Point2> a = local_vec[x].vertices;
+                        vector<Point2> b = local_vec[y].vertices;
+
+                        count1 = a.size();
+                        count2 = b.size(); 
+
+                        collisionDetected = gjk (a, count1, b, count2);
+
+                        if (!collisionDetected)
+                        {
+                            // printf("No collision detected\n");
+                        }
+                        else
+                        {   
+                            #pragma omp atomic
+                            num_collisions++;
+                            
+                            #ifdef DEBUG
+                                printf("Collision correctly detected between Polygon %d and Polygon %d\n", x, y);
+                            #endif
+                        }
+                    }
+                }
+                printf("Number of calls in section 3: %d\n", num_calls);
+            }
+
+            #pragma omp section 
+            {
+                printf("Section 4 starting...\n");
+                vector<Poly> local_vec = polygons;
+                int num_calls = 0;
+                for (y = 3 * block; y < NUM_POLYGONS - 1; y ++) {
+                    for (x = y + 1; x < NUM_POLYGONS; x++) {
+                        num_calls++;
+                        vector<Point2> a = local_vec[x].vertices;
+                        vector<Point2> b = local_vec[y].vertices;
+
+                        count1 = a.size();
+                        count2 = b.size(); 
+
+                        collisionDetected = gjk (a, count1, b, count2);
+
+                        if (!collisionDetected)
+                        {
+                            // printf("No collision detected\n");
+                        }
+                        else
+                        {   
+                            #pragma omp atomic
+                            num_collisions++;
+                            
+                            #ifdef DEBUG
+                                printf("Collision correctly detected between Polygon %d and Polygon %d\n", x, y);
+                            #endif
+                        }
+                    }
+                }
+                printf("Number of calls in section 4: %d\n", num_calls);
             }
         }
-	}
+
+    }
 
 
     // Timing
 	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
     time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
 
-    float avg_time_sec = time/num_gjk;
+    float avg_time_sec = time/NUM_PAIRS;
 
     // Summary
     printf("\n\n");
     printf("=====================================================\n");
     printf("=================  Main completed  ==================\n");
     printf("=====================================================\n");
-    printf("======   Num Polygons = %d\n", num_polygons); 
+    printf("======   Num Polygons = %d\n", NUM_POLYGONS); 
     printf("======   Avg num points = %f\n", average_num_points);
-    printf("======   GJK run on %d pairs of polygons\n", num_gjk);
+    printf("======   GJK run on %d pairs of polygons\n", NUM_PAIRS);
     printf("======   Total Num collisions: %d\n", num_collisions);
     printf("======   Total time for GJK = %f seconds\n", time);
     printf("======   Average time per GJK call = %f ms\n", avg_time_sec);

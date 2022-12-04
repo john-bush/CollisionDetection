@@ -7,8 +7,6 @@
 #include <time.h>
 #include <chrono>
 #include <thread>
-// ! NEED TO REWRITE TIMING CODE FOR LINUX
-#include <windows.h> 
 
 #define NUM_VERTICES 100
 
@@ -98,6 +96,7 @@ Point2 averagePoint (const vector<Point2> vertices, size_t count) {
 
 //-----------------------------------------------------------------------------
 // Get furthest vertex along a certain direction
+// ! this function is very costly in terms of runtime
 
 size_t indexOfFurthestPoint (const vector<Point2> vertices, size_t count, Point2 d) {
     
@@ -135,12 +134,13 @@ Point2 support (const vector<Point2> vertices1, size_t count1,
 
 
 int gjk (const vector<Point2> vertices1, size_t count1,
-         const vector<Point2> vertices2, size_t count2) {
+         const vector<Point2> vertices2, size_t count2, bool timer = false) {
     
     // ! Start clock timer
-    auto end = std::chrono::high_resolution_clock::now();
-    auto start = std::chrono::high_resolution_clock::now();
-
+    struct timespec start, stop;
+    double time;
+    // start clock
+    if( clock_gettime(CLOCK_REALTIME, &start) == -1) { perror("clock gettime");}
 
     int iter_count = 0;
     int result = 0;
@@ -222,15 +222,13 @@ int gjk (const vector<Point2> vertices1, size_t count1,
         simplex[1] = simplex[2]; // swap element in the middle (point B)
         --index;
     }
-
-    #ifdef DEBUG
-    if (result == 1) {
-        end = std::chrono::high_resolution_clock::now();
-        auto duration = (end - start);
-        auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(duration); // Microsecond (as int)
-        cout << "Duration = " << ns.count() << "ns" << endl;
+    
+    if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
+    time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;  
+    
+    if (timer) {
+        printf("======   GJK CALL TIME = %f seconds\n", time);
     }
-    #endif
     
 
     return result;
@@ -446,12 +444,14 @@ vector<Point2> generateRandomPolygon(int n, int sizeX, int sizeY, float shiftX =
 
 
 int main(int argc, const char * argv[]) {
-
+    printf("=====================================================\n");
+    printf("==================  Main Started  ===================\n");
+    printf("=====================================================\n");
     /**
      * @brief: main method for GJK serial testing
      * 
      * @run: terminal commands:
-     *      compile: g++ -o gjk gjk.cpp -pg -g
+     *      compile: g++ -o gjk gjk_for.cpp -pg -g
      *      run: gjk
      *      profile: gprof -a gjk.exe > [output file name]
      * 
@@ -465,7 +465,7 @@ int main(int argc, const char * argv[]) {
      */
 
     // Polygon Parameters
-    const int sqrt_NUM_POLYGONS = 64; // sqrt(number of polygons generated)
+    const int sqrt_NUM_POLYGONS = 32; // sqrt(number of polygons generated)
     const int NUM_POLYGONS = sqrt_NUM_POLYGONS * sqrt_NUM_POLYGONS;
     const int dimX = 50; // max x dimension of polygon
     const int dimY = 50; // max y dimension of polygon
@@ -510,49 +510,63 @@ int main(int argc, const char * argv[]) {
     // start clock
     if( clock_gettime(CLOCK_REALTIME, &start) == -1) { perror("clock gettime");}
 
-    const int NUM_THREADS = 16;
-
     // thread private variables
     size_t count1 = 0, count2 = 0;
     int collisionDetected = 0, tid = 0;
 
-
+    
+    int loop_iter = 0;
+    x = 0;
+    y = 0;
     /**
      * @brief GJK Call Loop
      * 
      * Iterates over all unique polygon pairs and calls GJK on them.
      * 
      */
-    #pragma omp parallel shared (polygons, num_collisions) private(tid, count1, count2, collisionDetected)
-    {
-        tid = omp_get_thread_num();
-        #pragma omp for schedule(dynamic) collapse(2)    
-        for(x = 0; x < (NUM_POLYGONS - 1); x++)
-        {
-            for (y = x + 1; y < NUM_POLYGONS; y++) {
-                vector<Point2> a = polygons[x].vertices;
-                vector<Point2> b = polygons[y].vertices;
+    const int NUM_THREADS = 4;
+    omp_set_num_threads(NUM_THREADS);
+    printf("============  Entering Parallel Portion  ============\n");
+    #pragma omp parallel shared (polygons, num_collisions) private(x, y, count1, count2, collisionDetected)
+    {        
+        #pragma omp for schedule(runtime) nowait  
+        for (loop_iter = 0; loop_iter < NUM_PAIRS; loop_iter++) {
+            
+            // if x == num_polygons, increment y
+            
+            vector<Point2> a = polygons[x].vertices;
+            vector<Point2> b = polygons[y].vertices;
 
-                count1 = a.size();
-                count2 = b.size(); 
+            count1 = a.size();
+            count2 = b.size(); 
 
-                collisionDetected = gjk (a, count1, b, count2);
+            collisionDetected = gjk (a, count1, b, count2);
 
-                if (!collisionDetected)
-                {
-                    // printf("No collision detected\n");
-                }
-                else
-                {   
-                    #pragma omp atomic
-                    num_collisions++;
-                    
-                    #ifdef DEBUG
-                        printf("Collision correctly detected between Polygon %d and Polygon %d\n", x, y);
-                    #endif
-                }
+            if (!collisionDetected)
+            {
+                // printf("No collision detected\n");
             }
+            else
+            {   
+                #pragma omp atomic
+                num_collisions++;
+                
+                #ifdef DEBUG
+                    printf("Collision correctly detected between Polygon %d and Polygon %d\n", x, y);
+                #endif
+            }
+
+
+            if (x == (NUM_POLYGONS - 1)) {
+                y++;
+                x = y;
+            } else {
+                x++;
+            }
+
+
         }
+
     }
 
 

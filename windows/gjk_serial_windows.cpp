@@ -6,6 +6,7 @@
 #include <time.h>
 #include <chrono>
 #include <thread>
+#include <windows.h>
 
 #define NUM_VERTICES 100
 
@@ -132,13 +133,12 @@ Point2 support (const vector<Point2> vertices1, size_t count1,
 
 
 int gjk (const vector<Point2> vertices1, size_t count1,
-         const vector<Point2> vertices2, size_t count2, bool debug = false) {
+         const vector<Point2> vertices2, size_t count2) {
+    
+    // ! Start clock timer
+    auto end = std::chrono::high_resolution_clock::now();
+    auto start = std::chrono::high_resolution_clock::now();
 
-
-    struct timespec start, stop;
-    double time;
-    // start clock
-    if( clock_gettime(CLOCK_REALTIME, &start) == -1) { perror("clock gettime");}
 
     int iter_count = 0;
     int result = 0;
@@ -219,11 +219,17 @@ int gjk (const vector<Point2> vertices1, size_t count1,
         
         simplex[1] = simplex[2]; // swap element in the middle (point B)
         --index;
-    } 
+    }
 
-    if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
-    time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;  
-    printf("======   GJK CALL TIME = %f seconds\n", time);
+    #ifdef DEBUG
+    if (result == 1) {
+        end = std::chrono::high_resolution_clock::now();
+        auto duration = (end - start);
+        auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(duration); // Microsecond (as int)
+        cout << "Duration = " << ns.count() << "ns" << endl;
+    }
+    #endif
+    
 
     return result;
 }
@@ -438,9 +444,7 @@ vector<Point2> generateRandomPolygon(int n, int sizeX, int sizeY, float shiftX =
 
 
 int main(int argc, const char * argv[]) {
-    printf("=====================================================\n");
-    printf("==================  Main Started  ===================\n");
-    printf("=====================================================\n");
+
     /**
      * @brief: main method for GJK serial testing
      * 
@@ -459,7 +463,7 @@ int main(int argc, const char * argv[]) {
      */
 
     // Polygon Parameters
-    const int sqrt_num_polygons = 32; // sqrt(number of polygons generated)
+    const int sqrt_num_polygons = 64; // sqrt(number of polygons generated)
     const int num_polygons = sqrt_num_polygons * sqrt_num_polygons;
     const int dimX = 50; // max x dimension of polygon
     const int dimY = 50; // max y dimension of polygon
@@ -494,13 +498,7 @@ int main(int argc, const char * argv[]) {
 
     // Stats variables
     int num_gjk = 0, num_collisions = 0;
-
-    struct timespec start, stop;
-    double time;
-
-
-    // start clock
-    if( clock_gettime(CLOCK_REALTIME, &start) == -1) { perror("clock gettime");}
+    auto start = std::chrono::high_resolution_clock::now();
 
     /**
      * @brief GJK Call Loop
@@ -508,8 +506,6 @@ int main(int argc, const char * argv[]) {
      * Iterates over all unique polygon pairs and calls GJK on them.
      * 
      */
-    printf("============  Entering Parallel Portion  ============\n");
-
 	for(int runs = 0; runs < (num_polygons - 1); runs++)
 	{
         for (int comp = runs + 1; comp < num_polygons; comp++) {
@@ -538,10 +534,11 @@ int main(int argc, const char * argv[]) {
 
 
     // Timing
-	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
-    time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
-
-    float avg_time_sec = time/num_gjk;
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = (end - start);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration); // Microsecond (as int)
+    float total_time_ms = 1.0f * ms.count();
+    float avg_time_ms = total_time_ms/num_gjk;
 
     // Summary
     printf("\n\n");
@@ -552,8 +549,8 @@ int main(int argc, const char * argv[]) {
     printf("======   Avg num points = %f\n", average_num_points);
     printf("======   GJK run on %d pairs of polygons\n", num_gjk);
     printf("======   Total Num collisions: %d\n", num_collisions);
-    printf("======   Total time for GJK = %f seconds\n", time);
-    printf("======   Average time per GJK call = %f ms\n", avg_time_sec);
+    printf("======   Total time for GJK = %f seconds\n", (total_time_ms/1000));
+    printf("======   Average time per GJK call = %f ms\n", avg_time_ms);
     printf("=====================================================\n");
     printf("=================  End of Summary  ==================\n");
     printf("=====================================================\n");

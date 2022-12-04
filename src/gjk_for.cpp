@@ -150,6 +150,13 @@ int gjk (const vector<Point2> vertices1, const vector<Point2> vertices2, bool ti
 
     size_t index = 0; // index of current vertex of simplex
     Point2 a, b, c, d, ao, ab, ac, abperp, acperp, simplex[3];
+
+    // GJK TIME 1
+    if (timer) {
+    	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
+    	time = (double)(stop.tv_nsec - start.tv_nsec);
+    	printf("======   GJK TIME 1 = %f nanoseconds\n", time);
+    }
     
     Point2 position1 = averagePoint (vertices1, count1); // not a CoG but
     Point2 position2 = averagePoint (vertices2, count2); // it's ok for GJK )
@@ -175,10 +182,12 @@ int gjk (const vector<Point2> vertices1, const vector<Point2> vertices2, bool ti
         return 0; // no collision
     }
     d = negatePoint (a); // The next search direction is always towards the origin, so the next search direction is negatePoint(a)
+    
+    // GJK TIME 2
     if (timer) {
     	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
     	time = (double)(stop.tv_nsec - start.tv_nsec);
-    	printf("======   GJK TIME 1 = %f nanoseconds\n", time);
+    	printf("======   GJK TIME 2 = %f nanoseconds\n", time);
     }
 
     while (iter_count < 100) {
@@ -441,6 +450,53 @@ vector<Point2> randomPoints(const int n, int sizeX, int sizeY, float shiftX = 0,
     return randomPoints;
 }
 
+vector<vector<Point2>> divide_into_sub_polygons(vector<Point2> Poly, int num)
+{
+    vector<vector<Point2>> subPoly;
+
+    for(int x = 0; x < num; x++)
+    {
+        vector<Point2> sub = {Poly.begin() + x, Poly.begin()+ x + 1};
+        subPoly.push_back(sub);
+    }
+    return subPoly;
+}
+
+void printToFile(Point2 *polygon1, int length1, std::string fileName)
+{
+    std::fstream object1;
+    int num_obj = 0;
+    
+    object1.open(fileName);
+    //creates a unique identifier for each object
+    /* struct std::stat buffer;
+    while(stat ((fileName + std::to_string(num_obj)).c_str(), &buffer) == 0)
+    {
+        num_obj ++;
+    }*/
+   for (int x = 0; x < length1; x++)
+   {
+    object1 << polygon1[x].x << " " <<polygon1[x].y << std::endl;
+   }
+   object1.close();
+}
+vector<Point2> readFromFile(std::string fileName)
+{
+    vector<Point2> polygon;
+    std::fstream object1;
+    std::string line;
+    object1.open(fileName);
+
+    while(std::getline(object1,line))
+    {
+        Point2 newPoint;
+        newPoint.x = line.substr(0,line.find(" "));
+        newPoint.y = line.substr(line.find(" "));
+        polygon.push_back(newPoint);
+    }
+    return polygon;
+}
+
 /**
  * @brief Generates random polygon.
  *          First generates point cloud of size n
@@ -543,12 +599,12 @@ int main(int argc, const char * argv[]) {
      * Iterates over all unique polygon pairs and calls GJK on them.
      * 
      */
-    const int NUM_THREADS = 1;
+    const int NUM_THREADS = 4;
     omp_set_num_threads(NUM_THREADS);
     printf("============  Entering Parallel Portion  ============\n");
-    #pragma omp parallel shared (loop_iter, polygons, num_collisions) private(localX, localY, show_time, collisionDetected)
-    {        
-        #pragma omp for schedule(dynamic) nowait
+    #pragma omp parallel shared (x, y, loop_iter, num_collisions) firstprivate(polygons) private(localX, localY, show_time, collisionDetected)
+    {
+        #pragma omp for schedule(dynamic, 256) nowait
         for (loop_iter = 0; loop_iter < NUM_PAIRS; loop_iter++) {
             
             #pragma omp critical

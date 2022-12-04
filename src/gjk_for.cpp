@@ -175,8 +175,19 @@ int gjk (const vector<Point2> vertices1, const vector<Point2> vertices2, bool ti
         return 0; // no collision
     }
     d = negatePoint (a); // The next search direction is always towards the origin, so the next search direction is negatePoint(a)
-    
+    if (timer) {
+    	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
+    	time = (double)(stop.tv_nsec - start.tv_nsec);
+    	printf("======   GJK TIME 1 = %f nanoseconds\n", time);
+    }
+
     while (iter_count < 100) {
+        if (timer) {
+        	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
+        	time = (double)(stop.tv_nsec - start.tv_nsec);
+        	printf("======   GJK While loop time = %f nanoseconds\n", time);
+        }
+        
         iter_count++;
         
         a = simplex[++index] = support (vertices1, count1, vertices2, count2, d);
@@ -228,6 +239,8 @@ int gjk (const vector<Point2> vertices1, const vector<Point2> vertices2, bool ti
         
         simplex[1] = simplex[2]; // swap element in the middle (point B)
         --index;
+
+        
     }
     
     if (timer) {
@@ -530,10 +543,10 @@ int main(int argc, const char * argv[]) {
      * Iterates over all unique polygon pairs and calls GJK on them.
      * 
      */
-    const int NUM_THREADS = 2;
+    const int NUM_THREADS = 1;
     omp_set_num_threads(NUM_THREADS);
     printf("============  Entering Parallel Portion  ============\n");
-    #pragma omp parallel shared (polygons, num_collisions) private(localX, localY, show_time, collisionDetected)
+    #pragma omp parallel shared (loop_iter, polygons, num_collisions) private(localX, localY, show_time, collisionDetected)
     {        
         #pragma omp for schedule(dynamic) nowait
         for (loop_iter = 0; loop_iter < NUM_PAIRS; loop_iter++) {

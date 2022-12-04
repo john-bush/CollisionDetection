@@ -462,6 +462,8 @@ vector<vector<Point2>> divide_into_sub_polygons(vector<Point2> Poly, int num)
     return subPoly;
 }
 
+
+
 void printToFile(Point2 *polygon1, int length1, std::string fileName)
 {
     std::fstream object1;

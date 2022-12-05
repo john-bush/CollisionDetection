@@ -6,6 +6,7 @@
 #include <time.h>
 #include <chrono>
 #include <thread>
+#include <mutex>
 
 #define NUM_VERTICES 100
 
@@ -469,7 +470,42 @@ vector<Point2> generateRandomPolygon(int n, int sizeX, int sizeY, float shiftX =
     return polygon;
 }
 
-int threadHandler(int start_i)
+
+mutex collision_mutex;
+int num_collisions = 0;
+
+void threadHandler(vector<Poly> polygons, int thread_i, int num_threads, int block_size, int num_polygons) {
+    int thread_idx = thread_i;
+    int num_calls = 0;
+    bool show_time = false;
+    int lower_i = thread_idx * block_size;
+    int upper_i = (thread_idx + 1) * block_size;
+    int num_local_collisions = 0;
+    if (thread_idx == (num_threads - 1)) { // if last thread, change upper iterator
+        upper_i -= 1;
+    }
+
+    for (int y = lower_i; y < upper_i; y++ ) {
+        for (int x = y + 1; x < num_polygons; x++) {
+            num_calls++;
+            if (y == 0 && x == 1) {
+                show_time = true;
+            } else {
+                show_time = false;
+            }
+
+            if (gjk (polygons[x].vertices, polygons[y].vertices, show_time)) {
+                num_local_collisions++;
+            }
+        }
+    }
+
+    printf("======   Number of calls in thread %d: %d\n", thread_idx, num_calls);
+    collision_mutex.lock();
+    num_collisions += num_local_collisions;
+    collision_mutex.unlock();
+    return;
+}
 
 
 int main(int argc, const char * argv[]) {
@@ -494,10 +530,10 @@ int main(int argc, const char * argv[]) {
      */
 
     // Polygon Parameters
-    const int sqrt_NUM_POLYGONS = 32; // sqrt(number of polygons generated)
+    const int sqrt_NUM_POLYGONS = 64; // sqrt(number of polygons generated)
     const int NUM_POLYGONS = sqrt_NUM_POLYGONS * sqrt_NUM_POLYGONS;
-    const int dimX = 50; // max x dimension of polygon
-    const int dimY = 50; // max y dimension of polygon
+    const int dimX = 100; // max x dimension of polygon
+    const int dimY = 100; // max y dimension of polygon
     const int num_rand_points = 200; // number of random points to generate each poly
     const float space_factor = 0.4; // fraction of dim that polygons are displaced by
 
@@ -530,67 +566,45 @@ int main(int argc, const char * argv[]) {
 
     // Stats variables
     int NUM_PAIRS = NUM_POLYGONS * (NUM_POLYGONS - 1) / 2;
-    int num_collisions = 0;
 
     struct timespec start, stop;
     double time;
+    
 
 
+
+    printf("============  Entering Parallel Portion  ============\n");
     // start clock
     if( clock_gettime(CLOCK_REALTIME, &start) == -1) { perror("clock gettime");}
 
-    // thread private variables
-    int collisionDetected = 0, tid = 0;
-    bool show_time = false;
-    int localX = 0, localY = 0;
-
-    int loop_iter = 0;
-    x = 0;
-    y = 0;
+    
     /**
      * @brief GJK Call Loop
      * 
      * Iterates over all unique polygon pairs and calls GJK on them.
      * 
      */
-    const int NUM_THREADS = 16;
-    omp_set_num_threads(NUM_THREADS);
-    printf("============  Entering Parallel Portion  ============\n");
-    #pragma omp parallel shared (x, y, loop_iter, num_collisions) firstprivate(polygons) private(localX, localY, show_time, collisionDetected)
-    {        
-        #pragma omp for schedule(dynamic, 50) nowait
-        for (loop_iter = 0; loop_iter < NUM_PAIRS; loop_iter++) {
-            
-            #pragma omp critical
-            {
-                localX = x;
-                localY = y;
-                if (x == (NUM_POLYGONS - 1)) {
-                    y++;
-                    x = y;
-                } else {
-                    x++;
-                } 
-            }
-            
-            show_time = false;
-            if (localX == 0 && localY == 0) {
-                show_time = true; 
-            }
-            collisionDetected = gjk(polygons[localX].vertices, polygons[localY].vertices, show_time);
-
-            if (collisionDetected)
-            {   
-                #pragma omp atomic
-                num_collisions++;
-                
-                #ifdef DEBUG
-                    printf("Collision correctly detected between Polygon %d and Polygon %d\n", x, y);
-                #endif
-            }            
-        }
-
+    int NUM_THREADS = 1;
+    if (argc > 1) {
+	    NUM_THREADS = atoi(argv[1]);
     }
+
+
+    vector<thread> ThreadVector;
+    int block = NUM_POLYGONS/NUM_THREADS;
+    vector<int> ids;
+    for (int id = 0; id < NUM_THREADS; id++) {
+        ids.push_back(id);
+    }
+
+    for (int thread_num : ids) {
+        ThreadVector.push_back(thread(threadHandler, polygons, thread_num, NUM_THREADS, block, NUM_POLYGONS));
+    }
+    
+    for (auto& t: ThreadVector) {
+        t.join();
+    }
+
 
 
     // Timing
@@ -600,7 +614,6 @@ int main(int argc, const char * argv[]) {
     float avg_time_sec = time/NUM_PAIRS;
 
     // Summary
-    printf("\n\n");
     printf("=====================================================\n");
     printf("=================  Main completed  ==================\n");
     printf("=====================================================\n");

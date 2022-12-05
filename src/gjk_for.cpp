@@ -136,11 +136,13 @@ Point2 support (const vector<Point2> vertices1, size_t count1,
 int gjk (const vector<Point2> vertices1, const vector<Point2> vertices2, bool timer = false) {
     
     // ! Start clock timer
-    struct timespec start, stop;
+    // struct timespec start, stop;
+    double start, stop;
     double time;
     // start clock
     if (timer) {
-        if( clock_gettime(CLOCK_REALTIME, &start) == -1) { perror("clock gettime");}
+        start = omp_get_wtime();
+        // if( clock_gettime(CLOCK_REALTIME, &start) == -1) { perror("clock gettime");}
     }
     size_t count1 = vertices1.size();
     size_t count2 = vertices2.size();
@@ -153,8 +155,10 @@ int gjk (const vector<Point2> vertices1, const vector<Point2> vertices2, bool ti
 
     // GJK TIME 1
     if (timer) {
-    	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
-    	time = (double)(stop.tv_nsec - start.tv_nsec);
+        stop = omp_get_wtime();
+        time = stop-start;
+    	// if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
+    	// time = (double)(stop.tv_nsec - start.tv_nsec);
     	printf("======   GJK TIME 1 = %f nanoseconds\n", time);
     }
     
@@ -174,8 +178,10 @@ int gjk (const vector<Point2> vertices1, const vector<Point2> vertices2, bool ti
     if (dotProduct (a, d) <= 0) {
         // ! END CLOCK TIMER & Print time
         if (timer) {
-            if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
-            time = (double)(stop.tv_nsec - start.tv_nsec);
+            stop = omp_get_wtime();
+            time = stop-start;
+            // if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
+            // time = (double)(stop.tv_nsec - start.tv_nsec);
             printf("======   GJK CALL TIME = %f nanoseconds\n", time);
         }
                
@@ -185,15 +191,19 @@ int gjk (const vector<Point2> vertices1, const vector<Point2> vertices2, bool ti
     
     // GJK TIME 2
     if (timer) {
-    	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
-    	time = (double)(stop.tv_nsec - start.tv_nsec);
+    	stop = omp_get_wtime();
+        time = stop-start;
+    	// if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
+    	// time = (double)(stop.tv_nsec - start.tv_nsec);
     	printf("======   GJK TIME 2 = %f nanoseconds\n", time);
     }
 
     while (iter_count < 100) {
         if (timer) {
-        	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
-        	time = (double)(stop.tv_nsec - start.tv_nsec);
+        	stop = omp_get_wtime();
+            time = stop-start;
+            // if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
+            // time = (double)(stop.tv_nsec - start.tv_nsec);
         	printf("======   GJK While loop time = %f nanoseconds\n", time);
         }
         
@@ -253,8 +263,10 @@ int gjk (const vector<Point2> vertices1, const vector<Point2> vertices2, bool ti
     }
     
     if (timer) {
-        if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
-        time = (double)(stop.tv_nsec - start.tv_nsec);
+        stop = omp_get_wtime();
+        time = stop-start;
+    	// if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror("clock gettime");}		
+    	// time = (double)(stop.tv_nsec - start.tv_nsec);
         printf("======   GJK CALL TIME = %f nanoseconds with %d iterations\n", time, iter_count);
     }
     
@@ -553,7 +565,7 @@ int main(int argc, const char * argv[]) {
      * 
      */
 	int NUM_THREADS = 1;
-    int chunk_size = 256;
+    int chunk_size = 1;
     if (argc > 1) {
 	    NUM_THREADS = atoi(argv[1]);
     }
@@ -563,28 +575,26 @@ int main(int argc, const char * argv[]) {
 
     omp_set_num_threads(NUM_THREADS);
     printf("============  Entering Parallel Portion  ============\n");
-    #pragma omp parallel shared (y, num_collisions) private(collisionDetected) 
+    #pragma omp parallel shared (polygons, num_collisions)
     {
-        vector<Poly> localPoly = polygons;
+        // vector<Poly> localPoly = polygons;
+        int collisionDetected = 0;
         #pragma omp for schedule(dynamic, chunk_size) nowait reduction(+:num_collisions)
-        for (y = 0; y < NUM_POLYGONS - 1; y++) {
-            
-            for (int comp = (y + 1); comp < NUM_POLYGONS; comp++) {
-                if (comp == 1 && y == 0) {
-                    collisionDetected = gjk(localPoly[comp].vertices, localPoly[y].vertices, true); 
+        for (int iter = 0; iter < NUM_POLYGONS - 1; iter++) {
+            // each iteration of loop calls this loop
+            for (int comp = (iter + 1); comp < NUM_POLYGONS; comp++) {
+                if (comp == 1 && iter == 0) {
+                    collisionDetected = gjk(polygons[comp].vertices, polygons[iter].vertices, true); 
                 } else {
-                    collisionDetected = gjk(localPoly[comp].vertices, localPoly[y].vertices, false);
+                    collisionDetected = gjk(polygons[comp].vertices, polygons[iter].vertices, false);
                 }
                 
                 if (collisionDetected)
                 {
                     num_collisions++;
-                    
-                    #ifdef DEBUG
-                        printf("Collision correctly detected between Polygon %d and Polygon %d\n", x, y);
-                    #endif
                 }
-            }             
+            }           
+              
         }
 
     }
@@ -597,7 +607,6 @@ int main(int argc, const char * argv[]) {
     float avg_time_sec = time/NUM_PAIRS;
 
     // Summary
-    printf("\n\n");
     printf("=====================================================\n");
     printf("=================  Main completed  ==================\n");
     printf("=====================================================\n");

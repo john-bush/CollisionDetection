@@ -450,55 +450,6 @@ vector<Point2> randomPoints(const int n, int sizeX, int sizeY, float shiftX = 0,
     return randomPoints;
 }
 
-vector<vector<Point2>> divide_into_sub_polygons(vector<Point2> Poly, int num)
-{
-    vector<vector<Point2>> subPoly;
-
-    for(int x = 0; x < num; x++)
-    {
-        vector<Point2> sub = {Poly.begin() + x, Poly.begin()+ x + 1};
-        subPoly.push_back(sub);
-    }
-    return subPoly;
-}
-
-
-
-void printToFile(Point2 *polygon1, int length1, std::string fileName)
-{
-    std::fstream object1;
-    int num_obj = 0;
-    
-    object1.open(fileName);
-    //creates a unique identifier for each object
-    /* struct std::stat buffer;
-    while(stat ((fileName + std::to_string(num_obj)).c_str(), &buffer) == 0)
-    {
-        num_obj ++;
-    }*/
-   for (int x = 0; x < length1; x++)
-   {
-    object1 << polygon1[x].x << " " <<polygon1[x].y << std::endl;
-   }
-   object1.close();
-}
-vector<Point2> readFromFile(std::string fileName)
-{
-    vector<Point2> polygon;
-    std::fstream object1;
-    std::string line;
-    object1.open(fileName);
-
-    while(std::getline(object1,line))
-    {
-        Point2 newPoint;
-        newPoint.x = line.substr(0,line.find(" "));
-        newPoint.y = line.substr(line.find(" "));
-        polygon.push_back(newPoint);
-    }
-    return polygon;
-}
-
 /**
  * @brief Generates random polygon.
  *          First generates point cloud of size n
@@ -542,7 +493,7 @@ int main(int argc, const char * argv[]) {
      */
 
     // Polygon Parameters
-    const int sqrt_NUM_POLYGONS = 32; // sqrt(number of polygons generated)
+    const int sqrt_NUM_POLYGONS = 64; // sqrt(number of polygons generated)
     const int NUM_POLYGONS = sqrt_NUM_POLYGONS * sqrt_NUM_POLYGONS;
     const int dimX = 50; // max x dimension of polygon
     const int dimY = 50; // max y dimension of polygon
@@ -601,41 +552,39 @@ int main(int argc, const char * argv[]) {
      * Iterates over all unique polygon pairs and calls GJK on them.
      * 
      */
-    const int NUM_THREADS = 4;
+	int NUM_THREADS = 1;
+    int chunk_size = 256;
+    if (argc > 1) {
+	    NUM_THREADS = atoi(argv[1]);
+    }
+    if (argc > 2) {
+	    chunk_size = atoi(argv[2]);
+    }
+
     omp_set_num_threads(NUM_THREADS);
     printf("============  Entering Parallel Portion  ============\n");
-    #pragma omp parallel shared (x, y, loop_iter, num_collisions) firstprivate(polygons) private(localX, localY, show_time, collisionDetected)
+    #pragma omp parallel shared (y, num_collisions) private(collisionDetected) 
     {
-        #pragma omp for schedule(dynamic, 256) nowait
-        for (loop_iter = 0; loop_iter < NUM_PAIRS; loop_iter++) {
+        vector<Poly> localPoly = polygons;
+        #pragma omp for schedule(dynamic, chunk_size) nowait reduction(+:num_collisions)
+        for (y = 0; y < NUM_POLYGONS - 1; y++) {
             
-            #pragma omp critical
-            {
-                localX = x;
-                localY = y;
-                if (x == (NUM_POLYGONS - 1)) {
-                    y++;
-                    x = y;
+            for (int comp = (y + 1); comp < NUM_POLYGONS; comp++) {
+                if (comp == 1 && y == 0) {
+                    collisionDetected = gjk(localPoly[comp].vertices, localPoly[y].vertices, true); 
                 } else {
-                    x++;
-                } 
-            }
-            
-            show_time = false;
-            if (localX == 0 && localY == 0) {
-                show_time = true; 
-            }
-            collisionDetected = gjk(polygons[localX].vertices, polygons[localY].vertices, show_time);
-
-            if (collisionDetected)
-            {   
-                #pragma omp atomic
-                num_collisions++;
+                    collisionDetected = gjk(localPoly[comp].vertices, localPoly[y].vertices, false);
+                }
                 
-                #ifdef DEBUG
-                    printf("Collision correctly detected between Polygon %d and Polygon %d\n", x, y);
-                #endif
-            }            
+                if (collisionDetected)
+                {
+                    num_collisions++;
+                    
+                    #ifdef DEBUG
+                        printf("Collision correctly detected between Polygon %d and Polygon %d\n", x, y);
+                    #endif
+                }
+            }             
         }
 
     }
@@ -652,7 +601,7 @@ int main(int argc, const char * argv[]) {
     printf("=====================================================\n");
     printf("=================  Main completed  ==================\n");
     printf("=====================================================\n");
-    printf("======   Num Threads = %d\n", NUM_THREADS); 
+    printf("======   Num Threads = %d, chunk size = %d\n", NUM_THREADS, chunk_size); 
     printf("======   Num Polygons = %d\n", NUM_POLYGONS); 
     printf("======   Avg num points = %f\n", average_num_points);
     printf("======   GJK run on %d pairs of polygons\n", NUM_PAIRS);

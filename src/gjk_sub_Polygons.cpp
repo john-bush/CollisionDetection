@@ -592,7 +592,8 @@ int main(int argc, const char * argv[]) {
     // start clock
     if( clock_gettime(CLOCK_REALTIME, &start) == -1) { perror("clock gettime");}
     
-    triangulate("pczAevn", &in, &mid, &vorout);
+    char options[] = "pczAevn";
+    triangulate(options, &in, &mid, &vorout);
 
 
     // thread private variables
